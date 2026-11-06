@@ -1,0 +1,15 @@
+{
+  "name": "usim-case1-secure-voice-starter",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "vercel dev"
+  },
+  "dependencies": {
+    "openai": "^5.0.0"
+  },
+  "devDependencies": {
+    "vercel": "^65.4.0"
+  }
+}

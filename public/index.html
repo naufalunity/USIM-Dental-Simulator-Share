@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#102d45">
+  <title>USIM AI Dental History Simulator</title>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;background:#f3f6f8;color:#172632;font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+    header{background:#1a2f49;color:#fff;padding:24px 18px;border-radius:0 0 22px 22px}
+    main{max-width:720px;margin:18px auto;padding:0 14px 30px}
+    .brand{font-size:12px;letter-spacing:.07em;opacity:.82;text-transform:uppercase}
+    h1{font-size:24px;margin:8px 0}
+    p{margin:8px 0}
+    .card{background:#fff;border:1px solid #dce4eb;border-radius:18px;padding:18px;margin-bottom:14px}
+    .label{font-size:12px;font-weight:800;color:#607180;letter-spacing:.07em;text-transform:uppercase}
+    .muted{color:#607180;font-size:14px}
+    .status{padding:12px;background:#f0f4f7;border-radius:12px;font-size:14px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+    button{font:inherit;font-weight:750;border:0;border-radius:12px;padding:13px;min-height:48px;cursor:pointer}
+    .primary{background:#1a2f49;color:white}
+    .secondary{background:#e8eef3;color:#1a2f49}
+    .full{width:100%}
+    .bubble{padding:12px 14px;border-radius:13px;margin:10px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+    .student{background:#e5eff7;margin-left:8%}
+    .patient{background:#f0f3f5;margin-right:8%}
+    .speaker{font-size:11px;font-weight:800;text-transform:uppercase;color:#607180}
+    .hidden{display:none!important}
+    textarea{width:100%;min-height:100px;border:1px solid #dce4eb;border-radius:12px;padding:12px;font:inherit}
+    .notice{font-size:12px;color:#607180}
+    button:disabled{opacity:.5;cursor:not-allowed}
+    @media(max-width:480px){header{padding:20px 16px}.card{padding:15px}.grid{gap:8px}}
+  </style>
+</head>
+<body>
+<header>
+  <div class="brand">Faculty of Dentistry · USIM</div>
+  <h1>AI Dental History Simulator</h1>
+  <p>Mobile voice practice · Case 1</p>
+</header>
+<main>
+  <section class="card" id="welcome">
+    <div class="label">Practice case</div>
+    <h2>Case 1 — Dental pain</h2>
+    <p>Interview the patient one focused question at a time. The patient should only reveal details your question reasonably elicits.</p>
+    <div class="status" id="status">This website needs to be deployed to a secure HTTPS address before microphone access and AI connection can be tested reliably.</div>
+    <p class="muted">This version sends recorded questions to a secure server endpoint when deployed. Never put your API key in this webpage.</p>
+    <button class="primary full" id="start">Start consultation</button>
+  </section>
+
+  <section class="card hidden" id="interview">
+    <div class="label">Voice consultation</div>
+    <div class="status" id="recordstatus">Allow microphone access, then record one focused question.</div>
+    <div class="grid">
+      <button class="primary" id="record">🎙️ Record question</button>
+      <button class="secondary" id="stop" disabled>Stop recording</button>
+    </div>
+    <div id="chat" aria-live="polite"></div>
+    <div class="grid">
+      <button class="secondary" id="finish">Finish history</button>
+      <button class="secondary" id="clear">Clear session</button>
+    </div>
+  </section>
+
+  <section class="card hidden" id="reflection">
+    <div class="label">Student reflection</div>
+    <h2>Summarise your findings</h2>
+    <label for="summary"><b>History summary</b></label>
+    <textarea id="summary" placeholder="Summarise the history you elicited..."></textarea>
+    <p><b>Provisional clinical impression and supporting history</b></p>
+    <label for="impression" class="hidden">Provisional clinical impression and supporting history</label>
+    <textarea id="impression" placeholder="State your impression and supporting findings..."></textarea>
+    <button class="primary full" id="submit">Submit for feedback</button>
+  </section>
+
+  <section class="card hidden" id="feedback">
+    <div class="label">Feedback</div>
+    <h2>Review your interview</h2>
+    <div id="fb"></div>
+    <button class="secondary full" id="again">New practice session</button>
+  </section>
+
+  <p class="notice">Educational pilot only. Faculty validation, access controls, privacy review, and cost testing are required before student use.</p>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let stream = null, rec = null, chunks = [], turns = [], lastAudio = null, busy = false;
+const openingLine = "Doctor, pain at the lower right back tooth.";
+
+function bubble(who, text) {
+  const d = document.createElement("div");
+  d.className = "bubble " + who;
+  const s = document.createElement("div");
+  s.className = "speaker";
+  s.textContent = who === "student" ? "Student" : "Patient";
+  const t = document.createElement("div");
+  t.textContent = text;
+  d.append(s, t);
+  $("chat").append(d);
+  d.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+$("start").onclick = async () => {
+  try {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error("Microphone access requires a supported browser and secure HTTPS site.");
+    }
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    $("welcome").classList.add("hidden");
+    $("interview").classList.remove("hidden");
+    $("chat").innerHTML = "";
+    // Show the required first patient line and include it as conversation context.
+    bubble("patient", openingLine);
+    turns = [{ role: "assistant", content: openingLine }];
+    $("recordstatus").textContent = "Microphone ready. Ask your first question.";
+  } catch (e) {
+    $("status").textContent = e.message + " For local testing, use the hosted HTTPS version after deployment.";
+  }
+};
+
+$("record").onclick = () => {
+  if (!stream || busy) return;
+  if (!window.MediaRecorder) {
+    $("recordstatus").textContent = "This browser does not support audio recording. Try a current version of Chrome or Safari.";
+    return;
+  }
+  chunks = [];
+  let mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+    ? "audio/webm;codecs=opus"
+    : (MediaRecorder.isTypeSupported("audio/mp4") ? "audio/mp4" : "");
+  rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+  rec.onstop = sendTurn;
+  rec.start();
+  $("record").disabled = true;
+  $("stop").disabled = false;
+  $("recordstatus").textContent = "Recording — ask one focused question now.";
+};
+
+$("stop").onclick = () => {
+  if (rec && rec.state !== "inactive") rec.stop();
+  $("stop").disabled = true;
+  $("recordstatus").textContent = "Processing question…";
+};
+
+async function readApiResponse(res) {
+  const raw = await res.text();
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch (_) {
+    throw new Error(`Server returned a non-JSON response (HTTP ${res.status}). Check the Vercel terminal for API startup errors and confirm OPENAI_API_KEY is configured in .env.local, then restart the server.`);
+  }
+  if (!res.ok) {
+    throw new Error(data?.error || `Server request failed (HTTP ${res.status}). Check the Vercel terminal.`);
+  }
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error(`Server returned an invalid response (HTTP ${res.status}). Check the Vercel terminal.`);
+  }
+  return data;
+}
+
+async function sendTurn() {
+  busy = true;
+  try {
+    const blob = new Blob(chunks, { type: chunks[0]?.type || "audio/webm" });
+    if (blob.size < 1200) throw new Error("Recording was too short. Please try again.");
+
+    const b64 = await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result).split(",")[1]);
+      r.onerror = reject;
+      r.readAsDataURL(blob);
+    });
+
+    const res = await fetch("/api/turn", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ audioBase64: b64, mimeType: blob.type, turns })
+    });
+    const data = await readApiResponse(res);
+
+    bubble("student", data.transcript);
+    bubble("patient", data.reply);
+    turns.push(
+      { role: "user", content: data.transcript },
+      { role: "assistant", content: data.reply }
+    );
+
+    if (data.audioBase64) {
+      lastAudio = "data:audio/mpeg;base64," + data.audioBase64;
+      await new Audio(lastAudio).play().catch(() => {});
+    }
+    $("recordstatus").textContent = "Patient answered. Ask your next question.";
+  } catch (e) {
+    $("recordstatus").textContent = e.message || "An unexpected error occurred.";
+  } finally {
+    busy = false;
+    $("record").disabled = false;
+    $("stop").disabled = true;
+  }
+}
+
+$("finish").onclick = () => {
+  if (!turns.some(t => t.role === "user")) {
+    alert("Ask at least one question before finishing.");
+    return;
+  }
+  $("interview").classList.add("hidden");
+  $("reflection").classList.remove("hidden");
+};
+
+$("submit").onclick = async () => {
+  const summary = $("summary").value.trim();
+  const impression = $("impression").value.trim();
+  if (!summary || !impression) {
+    alert("Complete both fields first.");
+    return;
+  }
+
+  $("submit").disabled = true;
+  try {
+    const res = await fetch("/api/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ turns, summary, impression })
+    });
+    const d = await readApiResponse(res);
+
+    const fb = $("fb");
+    fb.replaceChildren();
+
+    const overall = document.createElement("p");
+    overall.textContent = d.overall || "Feedback generated.";
+    fb.append(overall);
+
+    (d.domains || []).forEach(x => {
+      const p = document.createElement("p");
+      p.textContent = x.domain + " — " + x.status + ": " + x.comment;
+      fb.append(p);
+    });
+
+    if (d.improvement) {
+      const p = document.createElement("p");
+      p.textContent = "Suggested improvement: " + d.improvement;
+      fb.append(p);
+    }
+
+    $("reflection").classList.add("hidden");
+    $("feedback").classList.remove("hidden");
+  } catch (e) {
+    alert(e.message || "Feedback could not be generated.");
+  } finally {
+    $("submit").disabled = false;
+  }
+};
+
+function reset() {
+  if (rec && rec.state !== "inactive") {
+    try { rec.stop(); } catch (_) {}
+  }
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = null;
+  rec = null;
+  chunks = [];
+  turns = [];
+  lastAudio = null;
+  busy = false;
+  $("chat").innerHTML = "";
+  $("fb").innerHTML = "";
+  $("summary").value = "";
+  $("impression").value = "";
+  ["interview", "reflection", "feedback"].forEach(x => $(x).classList.add("hidden"));
+  $("welcome").classList.remove("hidden");
+  $("record").disabled = false;
+  $("stop").disabled = true;
+  $("status").textContent = "This website needs to be deployed to a secure HTTPS address before microphone access and AI connection can be tested reliably.";
+  $("recordstatus").textContent = "Allow microphone access, then record one focused question.";
+}
+
+$("clear").onclick = reset;
+$("again").onclick = reset;
+</script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+USIM Case 1 Secure Voice Starter — included files
+
+README.md                 Project overview, structure, security, requirements, local development
+DEPLOYMENT_GUIDE.md       Step-by-step local and Vercel deployment checklist
+.env.example              Safe environment-variable template (placeholder only; no secret)
+.gitignore                Excludes secrets, dependencies, and local Vercel files
+package.json              Node/Vercel project dependencies and dev script
+vercel.json               Vercel routing configuration
+api/case1-prompt.txt      Full supplied Case 1 role-play prompt
+api/turn.js               Audio transcription, patient response, text-to-speech endpoint
+api/feedback.js           Formative dental history feedback endpoint
+public/index.html         Mobile-first frontend for interview and feedback
+
+Important:
+- No real API key is included.
+- Copy .env.example to .env.local and add your own key locally.
+- The opening patient line is displayed by the frontend and included in conversation context.
+- This is a development starter. Test privately and obtain faculty/privacy/security approval before student use.
